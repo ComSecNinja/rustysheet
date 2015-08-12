@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+        }
+        #connector {
+            position: relative;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20em;
+            margin: auto;
+        }
+        #inpAddr {
+            font-size: 1.25em;
+            width: 65%;
+        }
+        #btnConnect {
+            font-size: 1.25em;
+            width: 30%;
+            float: right;
+        }
+        #log {
+            display: none;
+            width: 100%;
+            height: 100%;
+            min-height: 10em;
+            overflow-y: scroll;
+            background-color: #eee;
+            font-size: 1.30em;
+        }
+        .msg {
+            margin-top: 0.2em;
+            margin-bottom: 0.2em;
+            display: inline-block;
+        }
+        .info {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        .timestamp {
+            padding-right: 1em;
+            color: grey;
+            font-family: monospace;
+        }
+        .prefix {
+            font-weight: bolder;
+        }
+        .prefix::after {
+            font-weight: normal;
+            content: ": ";
+        }
+    </style>
+</head>
+<body>
+    <div id="connector">
+        <noscript>You need to enable JavaScript to use this application!</noscript>
+        <input id="inpAddr" type="text" placeholder="IP/Domain:Port">
+        <button id="btnConnect">Connect</button>
+        <span id="spnError" class="error"></span>
+    </div>
+    <div id="log"></div>
+<script>
+    var log = document.getElementById("log"),
+        ws = null;
+        // 178.213.233.230:28015
+    document.getElementById("connector").addEventListener("click", function () {
+        if (document.getElementById("inpAddr").value.length < 1) {
+            return;
+        }
+        try { connect() } catch(err) {
+            console.error(err);
+            document.getElementById("spnError").textContent = err.message;
+            disconnect();
+        }
+    });
+
+    function disconnect() {
+        document.getElementById("log").style.display = "none";
+        document.getElementById("connector").style.display = "block";
+    }
+
+    function msToTime(ms) {
+        var d = new Date(ms),
+            h = d.getHours(),
+            m = d.getMinutes();
+        h = h < 10 ? "0" + h : h;
+        m = m < 10 ? "0" + m : m;
+
+        return h + ":" + m;
+    }
+
+    function print(msg, type, prefix) {
+        var container = document.createElement("div"),
+            p = document.createElement("p"),
+            stamp = document.createElement("span");
+
+        stamp.className = "timestamp";
+        stamp.textContent = msToTime(+new Date());
+        container.appendChild(stamp);
+
+        if (typeof prefix !== "undefined") {
+            var prfx = document.createElement("span");
+            prfx.className = "prefix";
+            prfx.textContent = prefix;
+            container.appendChild(prfx);
+        }
+
+        p.className = type + " msg";
+        p.textContent = msg;
+        container.appendChild(p);
+
+        log.appendChild(container);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function connect() {
+        var host = document.getElementById("inpAddr").value,
+            firstTry = true;
+        ws = (new WebSocket("ws://"+host+"/ms"));
+        ws.onerror = function (err) {
+            console.error(err);
+            if (firstTry) {
+                document.getElementById("spnError").textContent = "Lost connection to server";
+            }
+            if (ws.readyState > 1 || firstTry) {
+                ws.close();
+            }
+        };
+        ws.onclose = function () {
+            print("Disconnected from " + host, "info")
+            disconnect();
+            ws.close();
+        };
+        ws.onopen = function () {
+            firstTry = false;
+            document.getElementById("connector").style.display = "none";
+            document.getElementById("log").style.display = "block";
+            print("Connected to " + host, "info");
+            document.getElementById("spnError").textContent = "";
+        };
+        ws.onmessage = function (msg) {
+            switch (msg.data.split(" ")[0]) {
+                case "player.chat":
+                    try {
+                        var o = JSON.parse(msg.data.slice(msg.data.indexOf(" ") + 1, msg.data.length));
+                    } catch (err) {
+                        console.error(err);
+                        return
+                    }
+                    print(o.message, "chat", o.name)
+                    break;
+                case "player.connect":
+                    try {
+                        var o = JSON.parse(msg.data.slice(msg.data.indexOf(" ") + 1, msg.data.length));
+                    } catch (err) {
+                        console.error(err);
+                        return
+                    }
+                    print(" connected", "info", o.name);
+                    break;
+                case "player.disconnect":
+                    try {
+                        var o = JSON.parse(msg.data.slice(msg.data.indexOf(" ") + 1, msg.data.length));
+                    } catch (err) {
+                        console.error(err);
+                        return
+                    }
+                    print(o.name + " disconnected", "info")
+                    break;
+                case "player.death":
+                    try {
+                        var o = JSON.parse(msg.data.slice(msg.data.indexOf(" ") + 1, msg.data.length));
+                    } catch (err) {
+                        console.error(err);
+                        return
+                    }
+                    print(o.name + " died. Cause: " + o.lastDamage, "error");
+                    break;
+                case "l":
+                case "p":
+                    break;
+                default:
+                    console.info(msg.data);
+                    break;
+            }
+        };
+    }
+</script>
+</body>
+</html>
